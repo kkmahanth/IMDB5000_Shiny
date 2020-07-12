@@ -1,0 +1,513 @@
+---
+title: "Shiny Assignment 1"
+author: Karthik Mahanth Kattula
+date: "6/5/2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+pacman::p_load(tidyverse,shiny,lubridate,ggpubr,ggplot2,DMwR,dplyr,leaflet,stringr,formattable,ggrepel,ggthemes,scales,VIM,data.table,GGally,plotly,caret,car,corrplot,gapminder,randomForest)
+```
+
+
+#Load chicago crimes data for year 2018 into R as dataframe and examine the structure and summary of the data 
+```{r readData}
+imdb.movies<-read.csv("movie_metadata.csv")
+str(imdb.movies)
+summary(imdb.movies)
+
+```
+#We can see that there are NA values in this dataset and 884 NA s are there in Gross Feature and 492 NA's in budget feature
+
+```{r Remove Duplicates}
+sum(duplicated(imdb.movies))
+imdb.movies<-imdb.movies[!duplicated(imdb.movies),]
+```
+#There are 45 duplicate observations. But we are interested in having Unique Number of movies in data set. After removing the duplicated observations there are 4998 observations and 28 features
+
+
+```{r Data Pre Preprocessing}
+table(imdb.movies$color)
+#More than 95% of movies are Coloured ones which indicates predictor is almost constant. So dropping this predictor would not impact our analysis
+
+#In movie titles we have a special characters at the end so remove it
+imdb.movies$movie_title <- gsub("Â"," ",as.character(factor(imdb.movies$movie_title)))
+
+#Each movie is associated with multiple genres but most of the movies belong to one specific type of genre. Also as part of this assignment we are not using genre anywhere so dropping this would not affect 
+sum(duplicated(imdb.movies$genres))
+```
+```{r Missing Values}
+sapply(imdb.movies, function(x) sum(is.na(x)))
+```
+#We see that there are 874 missing values in gross and 487 missing values in budget. We need to know the budget and gross for calculating profit and imputing them generally would not be a best option
+
+```{r Pre Processing}
+#Before Removing the rows
+dim(imdb.movies)
+
+#Remove rows when there are NA's
+imdb.movies<-imdb.movies[!is.na(imdb.movies$gross),]
+imdb.movies<-imdb.movies[!is.na(imdb.movies$budget),]
+
+#After removing NA rows
+dim(imdb.movies)
+```
+#We ommitted only 22.8% of observations
+
+```{r Preprocessing}
+#Finding number of observations which do not have any missing values at all
+sum(complete.cases(imdb.movies))
+```
+#Still there are 89 rows with NA's
+
+```{r preprocessing}
+#Find the missing values in columns
+sapply(imdb.movies, function(x) sum(is.na(x)))
+```
+#Most of the misssing values are in aspect ratio
+
+```{r Preprocessing}
+table(imdb.movies$aspect_ratio)
+```
+#The most common aspect ratios are 1.85 and 2.35. For analysis group all other ratios
+
+```{r Preprocessing}
+#Replace NA's in aspect ratio with 0 and find mean imdb score for aspect ratios of 1.85,2.35 and others
+imdb.movies$aspect_ratio[is.na(imdb.movies$aspect_ratio)]<-0
+mean(imdb.movies$imdb_score[imdb.movies$aspect_ratio == 1.85])
+mean(imdb.movies$imdb_score[imdb.movies$aspect_ratio == 2.35])
+mean(imdb.movies$imdb_score[imdb.movies$aspect_ratio != 1.85 & imdb.movies$aspect_ratio!=2.35])
+```
+#There is no significant difference in means of different aspect ratios. So removing this wont affect our analysis
+
+```{r Preprocessing}
+#There are zeros in director_facebook_likes, actor3_facebook_likes, actor1_facebook_likes,cast_total_facebook_likes, facenumber_in_poster,actor2_facebook_likes,movie_facebook_likes
+#These can be treated as missing values because one reason could be the actors, directors and movie name doesn't have a facebook page. Imputing this would give better results
+#However zero in facenumber_in_poster could not be treated as missing value becuase the decsription says that facenumber_in_poster represents the number of the actors who featured in movie poster. So, here zero represents that none of the actors were featured in the movie poster
+
+#Impute zero in face_number_in_poster with mean of facenumebr_in_poster
+imdb.movies$facenumber_in_poster[is.na(imdb.movies$facenumber_in_poster)]<-round(mean(imdb.movies$facenumber_in_poster,na.rm = TRUE))
+
+imdb.movies[,c(5,6,8,14,25,28)][imdb.movies[,c(5,6,8,14,25,28)] == 0] <- NA
+
+imdb.movies$num_critic_for_reviews[is.na(imdb.movies$num_critic_for_reviews)]<-round(mean(imdb.movies$num_critic_for_reviews,na.rm = TRUE))
+
+imdb.movies$duration[is.na(imdb.movies$duration)] <- round(mean(imdb.movies$duration,na.rm = TRUE))
+
+imdb.movies$director_facebook_likes[is.na(imdb.movies$director_facebook_likes)]<-round(mean(imdb.movies$director_facebook_likes,na.rm = TRUE))
+
+imdb.movies$actor_3_facebook_likes[is.na(imdb.movies$actor_3_facebook_likes)]<-round(mean(imdb.movies$actor_3_facebook_likes, na.rm = TRUE))
+
+imdb.movies$actor_1_facebook_likes[is.na(imdb.movies$actor_1_facebook_likes)]<-round(mean(imdb.movies$actor_1_facebook_likes, na.rm = TRUE))
+
+imdb.movies$cast_total_facebook_likes[is.na(imdb.movies$cast_total_facebook_likes)]<-round(mean(imdb.movies$cast_total_facebook_likes, na.rm = TRUE))
+
+imdb.movies$actor_2_facebook_likes[is.na(imdb.movies$actor_2_facebook_likes)]<-round(mean(imdb.movies$actor_2_facebook_likes, na.rm = TRUE))
+
+imdb.movies$movie_facebook_likes[is.na(imdb.movies$movie_facebook_likes)]<-round(mean(imdb.movies$movie_facebook_likes, na.rm = TRUE))
+
+```
+
+
+```{r Preprocessing}
+table(imdb.movies$content_rating)
+```
+#There are few missing observations i.e. only 0.01 observations are having missing values and based on Motion Picture Association Film Rating System In 1970 the ages for "R" and "X" were raised from 16 to 17. Also, due to confusion over whether "M" rated films were suitable for children , "M" was renamed to "GP" and in 1972 MPAA revised "GP" to "PG" and in 1990 MPAA introduced "NC-17" and "X" rated is replaced by "NC-17". Replace most common ratings "Approved", "Not Rated", "Passed", "Unrated" with most common rating "R"
+
+
+```{r Preprocessing}
+imdb.movies <- imdb.movies[!(imdb.movies$content_rating %in% ""),]
+
+imdb.movies$content_rating[imdb.movies$content_rating == 'M']   <- 'PG' 
+imdb.movies$content_rating[imdb.movies$content_rating == 'GP']  <- 'PG' 
+imdb.movies$content_rating[imdb.movies$content_rating == 'X']   <- 'NC-17'
+
+
+imdb.movies$content_rating[imdb.movies$content_rating == 'Approved']  <- 'R' 
+imdb.movies$content_rating[imdb.movies$content_rating == 'Not Rated'] <- 'R' 
+imdb.movies$content_rating[imdb.movies$content_rating == 'Passed']    <- 'R' 
+imdb.movies$content_rating[imdb.movies$content_rating == 'Unrated']   <- 'R' 
+imdb.movies$content_rating <- factor(imdb.movies$content_rating)
+table(imdb.movies$content_rating)
+
+```
+
+```{r Add Columns}
+imdb.movies$Profit <- imdb.movies$gross - imdb.movies$budget
+table(imdb.movies$language)
+table(imdb.movies$country)
+```
+#Approximately 96% of films Language is in English so either we can drop this feature or else we can create new level Others or Non English Category and approximately 80 % of movies are filmed in USA and 8% from UK and and the rest 12 % from rest of the world. So instead of having these many levels create new level others and include all levels other than USA and UK into Others level
+
+```{r Preprocessing}
+#Drop features which are not required
+levels(imdb.movies$country) <- c(levels(imdb.movies$country), "Non USA")
+imdb.movies$country[(imdb.movies$country != 'USA')] <- 'Non USA' 
+imdb.movies$country <- factor(imdb.movies$country)
+table(imdb.movies$country)
+imdb.movies[,c(1,10,27,20)]<-NULL
+
+sapply(imdb.movies, function(x) sum(is.na(x)))
+
+```
+
+```{r Tabs}
+
+#Subset Columns which are required for different tabs
+tab1<-imdb.movies[,c(18,25)]
+tab2<-imdb.movies[,c(1,9,25)]
+
+
+#tab2<-tab2%>%group_by(director_name,actor_1_name)%>%summarise(AverageProfit=mean(Profit))%>%arrange(desc(Average#Profit))
+
+```
+
+```{r TrainTestSplit}
+imdb.movies.final<-imdb.movies[,c(2,3,4,5,7,11,12,14,17,18,19,20,21,22,23,24)]
+
+heatmap<-imdb.movies[,c(4,5,7,8,11,12,14,17,20,22,23,24)]
+
+ggcorr(heatmap, label = TRUE, label_round = 2, label_size = 3.5, size = 2, hjust = .85) +
+  ggtitle("Correlation Heatmap") +
+  theme(plot.title = element_text(hjust = 0.5))
+#There is high correlation 0.95 between actor1 facebook likes and total cast facebook likes. So we are using only actor 1 facebook likes for our analysis and combine actor 2 and actor 3 facebook likes and create a new feature other actors  facebook likes
+imdb.movies.final$other_actors_facebook_likes<-imdb.movies.final$actor_2_facebook_likes + imdb.movies.final$actor_3_facebook_likes
+
+#Also there is high correlation between num_voted_users and num_user_reviews. So instead of num_user_reviews take the ratio of critical reviews to num_user for reviews
+imdb.movies.final$critical_review_ratio<-imdb.movies.final$num_critic_for_reviews/imdb.movies.final$num_user_for_reviews
+
+imdb.movies.final<-imdb.movies.final[,c(2,3,5,6,8,10,11,12,13,15,16,17,18)]
+
+#Convert facenumber in poster and title year to factors
+imdb.movies.final$facenumber_in_poster<-as.factor(imdb.movies.final$facenumber_in_poster)
+
+
+
+ggplot(imdb.movies.final, aes(title_year)) +
+  geom_bar() +
+  labs(x = "Year movie was released", y = "Movie Count", title = "Histogram of Movie released") +
+  theme(plot.title = element_text(hjust = 0.5))
+#Most of the movies are produced after year 1975 and considering those observations for analysis could not result in best prediction of imdb score
+
+#Ignore those few observations
+imdb.movies.final<-imdb.movies.final[imdb.movies.final$title_year>=1975,]
+imdb.movies.final$title_year<-NULL
+
+# Split the data into training (80%) and validation/test set (20%) using createDataPartition
+set.seed(42)
+training.index <- createDataPartition(imdb.movies.final$imdb_score, p = 0.8, list = FALSE)
+imdb.movies.final.train <- imdb.movies.final[training.index, ]
+imdb.movies.final.valid <- imdb.movies.final[-training.index, ]
+
+```
+```{r Random Forest}
+
+randomForest.imdb.model<-randomForest(imdb_score~.,data = imdb.movies.final.train,mtry=7)
+
+randomforest.train.pred<-predict(randomForest.imdb.model,imdb.movies.final.train)
+randomforest.valid.pred<-predict(randomForest.imdb.model,imdb.movies.final.valid)
+
+#RMSE,MSE of Training Data
+sqrt(sum(randomforest.train.pred-imdb.movies.final.train$imdb_score)^2/dim(imdb.movies.final.train)[1])
+
+#RMSE,MSE of validation data
+sqrt(sum(randomforest.valid.pred-imdb.movies.final.valid$imdb_score)^2/dim(imdb.movies.final.valid)[1])
+
+
+
+```
+#The RMSE if training and validation dataset is same. The difference between training error and validation error is low or almost same. So, there is no overfitting of model 
+
+```{r Importance}
+#importance(randomForest.imdb.model)
+randomForest.imdb.model$importance
+
+tab3<-data.frame(randomForest.imdb.model$importance)
+tab3$Feature<-c("Duration","DirectorFacebookLikes","Actor1FacebookLikes","NoOfVotedUsers","FaceNumberinPoster","Country","ContentRating","Budget","MovieFacebookLikes","OtherActorsFBLikes","CriticalReviewRatio")
+
+tab4<-imdb.movies.final[,c(3,8,10,11)]
+names(tab4)<-c("Actor1FBLikes","Budget","MovieFBLikes","OtherActorFBLikes")
+
+
+``` 
+
+```{r ShinyApp}
+ui <- fluidPage(
+
+  # App Title ---- 
+  titlePanel("IMDB5000"),
+  
+  # Sidebar layout with a input and output definitions ----
+
+    # Main panel for displaying outputs ----
+    mainPanel(
+      tabsetPanel(
+        tabPanel("Location Versus Profit",
+                 plotOutput("Profit"),
+                 textOutput("ProfitText")),
+        
+        tabPanel("Actor1 Director Combinations",
+                 sidebarPanel(
+                   selectInput(inputId = "TopN",
+                               label = "Top N combinations",
+                               choices = 1:25, #Including upto top 25 combinations
+                               selected = "")
+                   
+                 ),
+                 tableOutput("Top10Combinations")),
+        tabPanel("Feature Importance",
+                 sidebarPanel(
+                   #selectInput(inputId = "IncNodePurity",
+                  #           label = "IncNodePurity",
+                   #            choices = seq(1,1000,100),
+                    #           selected = "")
+                     sliderInput(inputId = "IncNodePurity", 
+                                  label = "IncNodePurity", 
+                                  min = 0, max = 1000, 
+                                  value =100 )
+                 ),
+                 #mainPanel(plotOutput("ImportantFeatures")),
+                 #mainPanel(textOutput("ImpFeaturesText"))
+                 #tableOutput("ImportantFeatures")
+                 plotOutput("ImportantFeatures")),
+        
+        tabPanel("HeatMap",
+                 plotOutput("HeatMap"),
+                 textOutput("HeatMapText"))
+      )
+       
+    )
+)
+
+
+
+# Define server logic required to draw a scatterplot ----
+server <- function(input, output) {
+
+  #Tab1
+  output$Profit <- renderPlot({
+     tab1<- data.frame(tab1%>%group_by(country)%>%summarise(AverageProfit=mean(Profit)))
+     ggplot(tab1,aes(x=country,y=AverageProfit)) + geom_bar(stat = "identity")+ggtitle("Location versus Profit")
+  })
+  
+  output$ProfitText <- renderText({
+    paste("Profitability of the movies is calculated by using gross and budget fields. Hence, Profit is calculated as gross minus budget. However in our dataset, most of the movies are produced in U.S.A. For this reason we calculated the Average of (gross minus budget) for movies produced in U.S.A and Non U.S.A. From bar plot, we can see that Average is positive when location is U.S.A and negative when Location is Non U.S.A. Here negative Indicates budget is more than gross which implies loss. Thus, we can say that movie location has an impact on profitability of movies and if more movies are produced outside U.S.A. it is more likely to get losses because the Average of gross minus budget for the movies produced outside of U.S.A is negative i.e. resulting in loss ")
+  })
+  
+  #Tab2
+  output$Top10Combinations<-renderTable({
+       tab2<-tab2%>%group_by(director_name,actor_1_name)%>%summarise(AverageProfit=mean(Profit))%>%arrange(desc(AverageProfit))%>%top_n(20,AverageProfit)
+       n<-input$TopN
+       tab2[1:n,]
+  })
+  
+  #Tab3
+  output$ImportantFeatures<-renderPlot({
+       #final_tab3<-filter(tab3,`Feature`==input$Feature)
+       #tab3.imp<-data.frame(cbind(final_tab3$Feature,final_tab3$IncNodePurity))
+       #names(tab3.imp)<-c("Feature","IncNodePurity")
+       #tab3.imp
+      tab3<-tab3[tab3$IncNodePurity<=input$IncNodePurity,]
+      #tab3$Feature<-as.factor(tab3$Feature)
+      imp.features.tab3<-data.frame(cbind(tab3$Feature,tab3$IncNodePurity))
+      names(imp.features.tab3)<-c("Features","IncNodePurity")
+      ggplot(imp.features.tab3,aes(x=Features,y=IncNodePurity)) + geom_bar(stat = "identity") + ggtitle("Features Versus IncNodePurity") 
+      #barplot(imp.features.tab3,main = "Feature Vs IncNodePurity",xlab = "Features",ylab="IncNodePurity")
+  })
+  
+  #Tab4
+  output$HeatMap<-renderPlot({
+      ggcorr(tab4, label = TRUE, label_round = 2, label_size = 5, size = 3, hjust = .85) +
+  ggtitle("Correlation Heatmap") +
+  theme(plot.title = element_text(hjust = 0.5))
+  })
+  
+  output$HeatMapText<-renderText({
+    paste("The correlation coefficient between Actor1FB Likes and Budget is 0.02 seems there is no positive or negative linear relationship between these two Features and and the correlation coefficient between Movie facebook likes and budget is 0.04 and it is also same between other actors facebook likes and budget and in these two cases also there is no such relationship. So, we can infer that facebook likes for movie and/or actors does not depend on budget of movie")
+  })
+  
+  
+}
+
+# Create a Shiny app object
+shinyApp(ui = ui, server = server)
+```
+
+
+#Inc Node Purity relates to loss function by which best splits are chosen. The loss functions is MSE for regression and gini-impurity for classification. More Useful variables achieve higher increases in node purities and in this dataset NoOfVotedUsers is having highest increase in NodePurity followed by budget and duration
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
